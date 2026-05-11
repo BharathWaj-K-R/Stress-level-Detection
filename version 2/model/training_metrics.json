@@ -1,0 +1,60 @@
+{
+  "accuracy": 0.16666666666666666,
+  "classification_report": {
+    "Low Stress": {
+      "precision": 0.3333333333333333,
+      "recall": 0.5,
+      "f1-score": 0.4,
+      "support": 2.0
+    },
+    "Medium Stress": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1-score": 0.0,
+      "support": 2.0
+    },
+    "High Stress": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1-score": 0.0,
+      "support": 2.0
+    },
+    "accuracy": 0.16666666666666666,
+    "macro avg": {
+      "precision": 0.1111111111111111,
+      "recall": 0.16666666666666666,
+      "f1-score": 0.13333333333333333,
+      "support": 6.0
+    },
+    "weighted avg": {
+      "precision": 0.1111111111111111,
+      "recall": 0.16666666666666666,
+      "f1-score": 0.13333333333333333,
+      "support": 6.0
+    }
+  },
+  "confusion_matrix": [
+    [
+      1,
+      0,
+      1
+    ],
+    [
+      1,
+      0,
+      1
+    ],
+    [
+      1,
+      1,
+      0
+    ]
+  ],
+  "labels": {
+    "0": "Low Stress",
+    "1": "Medium Stress",
+    "2": "High Stress"
+  },
+  "total_samples": 30,
+  "learned_samples": 0
+}

@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+Thumbs.db
+
+version 2/data/prediction_history.csv
+version 2/data/user_training_samples.pkl
