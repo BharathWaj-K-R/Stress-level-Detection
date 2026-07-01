@@ -1,0 +1,12 @@
+{
+  "version": "v2.1.0",
+  "timestamp": "2026-07-01T01:30:48.932561+00:00",
+  "feature_extraction_method": "hog",
+  "include_handwriting_features": true,
+  "training_set_size": 30,
+  "cross_validated_accuracy": 0.3333333333333333,
+  "evaluated_accuracy": 0.3333333333333333,
+  "semantic_version": "v2.1.0",
+  "feature_count": 8103,
+  "approved_feedback_samples": 0
+}

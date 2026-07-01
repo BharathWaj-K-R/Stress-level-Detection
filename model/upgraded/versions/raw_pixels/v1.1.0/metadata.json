@@ -1,0 +1,10 @@
+{
+  "version": "v1.1.0",
+  "timestamp": "2026-07-01T01:26:35.959529+00:00",
+  "feature_extraction_method": "raw_pixels",
+  "include_handwriting_features": true,
+  "training_set_size": 30,
+  "cross_validated_accuracy": 0.3,
+  "semantic_version": "v1.1.0",
+  "feature_count": 16387
+}

@@ -1,35 +1,94 @@
 # Stress Level Detection from Handwriting - Version 2
 
-This folder contains an improved version of the project. It is separate from the original project files, so changes here do not interfere with the old code.
+This folder contains the experimental application for the project. It is isolated from the legacy root app so improvements can be developed without touching the original fallback model artifacts.
 
-## New Features
+## What Version 2 Adds
 
-- Upload handwriting image.
-- Capture handwriting image directly using camera.
-- Predict Low, Medium, or High stress.
-- Check basic image quality.
-- Save prediction history to CSV.
-- Download a text prediction report.
-- Learn from new labeled handwriting inputs.
-- Keep model, data, reports, and history inside this folder.
+- camera capture with `st.camera_input`
+- input validation for file type and size
+- quality checks before prediction
+- version-aware model loading
+- prediction history
+- downloadable prediction reports
+- **pending review** feedback flow
+- admin-only approval/rejection of new samples
+- versioned retraining from approved samples only
 
-## Folder Structure
+## Data and Labels
+
+Version 2 uses:
+
+- the bundled base dataset in `model/preprocessed_data.pkl`
+- approved reviewer samples from `data/approved_samples.pkl`
+
+Labels remain:
+
+- `0 -> Low Stress`
+- `1 -> Medium Stress`
+- `2 -> High Stress`
+
+## Feature Extraction Modes
+
+Retraining supports:
+
+- `raw_pixels`
+- `hog`
+
+Both modes can also append:
+
+- ink density ratio
+- stroke width variance
+- slant angle estimate
+
+## Model Versioning
+
+Retrained models are saved under:
 
 ```text
-version 2/
-    app.py
-    train_model.py
-    requirements.txt
-    README.md
-    model/
-        preprocessed_data.pkl
-        stress_model.pkl
-        label_mapping.json
-    data/
-        prediction_history.csv
-        user_training_samples.pkl
-    reports/
+version 2/model/upgraded/versions/<feature_mode>/<semantic_version>/
 ```
+
+Each version includes:
+
+- `stress_model.pkl`
+- `label_mapping.json`
+- `metadata.json`
+- `training_metrics.json`
+
+The currently promoted model is copied to:
+
+```text
+version 2/model/active/
+```
+
+## Admin Review Flow
+
+User corrections do **not** retrain the model immediately anymore.
+
+1. A user predicts on a handwriting sample.
+2. The user submits the corrected label for review.
+3. The sample is stored in:
+
+```text
+version 2/data/pending_review/
+```
+
+4. An admin opens the **Admin Review** page.
+5. The admin authenticates using:
+
+```text
+STRESS_APP_ADMIN_PASSWORD
+```
+
+6. The admin approves or rejects each sample.
+7. Approved samples are appended to:
+
+```text
+version 2/data/approved_samples.pkl
+```
+
+8. Retraining uses only the original dataset plus approved samples.
+9. A new model version is evaluated before promotion to active.
 
 ## Install Requirements
 
@@ -43,21 +102,12 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-## Retrain the Model
+## Retrain From Approved Samples
 
 ```powershell
-python train_model.py
+python train_model.py --feature-mode hog --promote-active
 ```
-
-## Teach the Model from App Input
-
-1. Upload or capture a handwriting image.
-2. Click **Predict Stress Level**.
-3. In **Teach the Model**, choose the correct stress level.
-4. Click **Save Input and Retrain Model**.
-
-The new sample is saved in `data/user_training_samples.pkl`, and the model is retrained using the original dataset plus the newly labeled input.
 
 ## Important Note
 
-This project is for educational use only. It is not a medical diagnostic tool. The model accuracy depends heavily on the size and quality of the handwriting dataset.
+This application is for educational and experimental purposes only. It is not a clinical or diagnostic system.

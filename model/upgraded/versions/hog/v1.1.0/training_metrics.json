@@ -1,0 +1,16 @@
+{
+  "version": "v1.1.0",
+  "feature_mode": "hog",
+  "include_handwriting_features": true,
+  "training_samples": 30,
+  "feature_count": 8103,
+  "validation_accuracy": 0.3333333333333333,
+  "cross_validated_accuracy": 0.3333333333333333,
+  "cross_validation_scores": [
+    0.3333333333333333,
+    0.3333333333333333,
+    0.16666666666666666,
+    0.3333333333333333,
+    0.5
+  ]
+}

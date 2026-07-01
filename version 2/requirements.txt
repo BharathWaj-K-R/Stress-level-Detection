@@ -1,5 +1,9 @@
-streamlit
-numpy
-pillow
-scikit-learn
-joblib
+streamlit==1.56.0
+numpy==2.4.2
+pillow==12.2.0
+scikit-learn==1.8.0
+joblib==1.5.3
+scikit-image==0.26.0
+matplotlib==3.11.0
+scipy==1.17.1
+pandas==3.0.1

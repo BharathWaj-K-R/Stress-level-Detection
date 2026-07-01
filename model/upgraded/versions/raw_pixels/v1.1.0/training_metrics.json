@@ -1,0 +1,16 @@
+{
+  "version": "v1.1.0",
+  "feature_mode": "raw_pixels",
+  "include_handwriting_features": true,
+  "training_samples": 30,
+  "feature_count": 16387,
+  "validation_accuracy": 0.16666666666666666,
+  "cross_validated_accuracy": 0.3,
+  "cross_validation_scores": [
+    0.3333333333333333,
+    0.3333333333333333,
+    0.16666666666666666,
+    0.16666666666666666,
+    0.5
+  ]
+}
