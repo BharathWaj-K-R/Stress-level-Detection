@@ -1,160 +1,101 @@
 # Stress Level Detection from Handwriting
 
-This project predicts a handwriting sample's stress category as **Low**, **Medium**, or **High** using machine learning. The repository now contains:
+A Streamlit web app that classifies handwriting samples into **Low**, **Medium**, or **High** stress levels using a Random Forest classifier trained on HOG features.
 
-- A legacy fallback app and model in the project root.
-- An upgraded training/evaluation pipeline with raw-pixel and HOG feature modes.
-- An experimental `version 2` app with camera capture, review-gated feedback, and versioned retraining.
+> **Disclaimer:** Educational / experimental project only. Not a clinical or diagnostic tool.
 
-## Data Source and Labels
+---
 
-The bundled training data lives in `model/preprocessed_data.pkl` and contains a small preprocessed educational dataset of handwriting samples.
+## Features
 
-- Image size: `128 x 128`
-- Base dataset size: `30` samples
-- Labels: `low`, `medium`, `high`
+- Upload an image or capture via camera
+- Image quality checks before prediction (resolution, blur, ink presence)
+- Class probability breakdown
+- Downloadable prediction report
+- Prediction history log
+- Admin panel for reviewing user-submitted corrections and retraining the model
 
-The original labels are encoded as:
+---
 
-- `0 -> Low Stress`
-- `1 -> Medium Stress`
-- `2 -> High Stress`
+## Project Structure
 
-Because the dataset is very small, every model in this repository should be treated as **experimental** rather than clinically reliable.
-
-## Feature Extraction Modes
-
-The upgraded training pipeline supports two feature modes:
-
-1. `raw_pixels`
-   - Uses the normalized flattened grayscale image.
-   - Adds three handwriting-specific derived features.
-
-2. `hog`
-   - Uses Histogram of Oriented Gradients from `skimage.feature.hog`.
-   - Also adds the same three handwriting-specific derived features.
-
-The shared handwriting-specific features are:
-
-- `ink_density_ratio`
-- `stroke_width_variance`
-- `slant_angle_estimate`
-
-## Model Versioning
-
-Upgraded models are stored under:
-
-```text
-model/upgraded/versions/<feature_mode>/<semantic_version>/
+```
+.
+├── app.py                    # Main Streamlit app
+├── train_model.py            # Retraining script
+├── requirements.txt
+├── inference/
+│   └── predictor.py          # Model loading and prediction helpers
+├── preprocessing/
+│   ├── feature_extraction.py # HOG / raw-pixel feature extraction
+│   └── quality_check.py      # Image quality validation
+├── model/
+│   ├── stress_model.pkl      # Trained model bundle
+│   ├── label_mapping.json    # Class label map
+│   ├── metadata.json         # Model version and accuracy info
+│   └── preprocessed_data.pkl # Base training dataset (30 samples)
+└── data/                     # Runtime data (auto-created)
+    ├── prediction_history.csv
+    ├── approved_samples.pkl
+    └── pending_review/
 ```
 
-Each version directory contains:
+---
 
-- `stress_model.pkl`
-- `label_mapping.json`
-- `training_metrics.json`
-- `metadata.json`
+## Run Locally
 
-The active upgraded model is copied to:
-
-```text
-model/upgraded/active/
-```
-
-The root Streamlit app prefers the upgraded active model when present and falls back to the original legacy model in `model/stress_model.pkl`.
-
-`metadata.json` includes:
-
-- timestamp
-- feature extraction method
-- training set size
-- feature count
-- cross-validated accuracy
-- semantic version
-
-## Evaluation Workflow
-
-Train candidate models:
-
-```powershell
-python train_model.py --feature-mode raw_pixels --version v1.1.0
-python train_model.py --feature-mode hog --version v1.1.0 --promote-active
-```
-
-Run the evaluation bundle:
-
-```powershell
-python scripts\run_evaluation.py
-```
-
-This writes outputs to `reports/`:
-
-- confusion matrix images
-- per-model classification reports
-- feature importance charts
-- an evaluation summary JSON
-
-## Input Validation
-
-Both apps now validate uploads before prediction:
-
-- file type restricted to `.jpg` and `.png`
-- max file size: `5 MB`
-- minimum resolution check
-- blur check using Laplacian variance
-- handwriting-presence check using ink ratio
-
-If a sample fails, prediction is blocked and the user sees a clear warning.
-
-## Version 2 Admin Review Flow
-
-The `version 2` app no longer retrains immediately from user feedback.
-
-New user-labeled samples are first stored in:
-
-```text
-version 2/data/pending_review/
-```
-
-An admin reviewer can open the **Admin Review** page in the v2 app, authenticate with the environment variable:
-
-```text
-STRESS_APP_ADMIN_PASSWORD
-```
-
-Then the reviewer can:
-
-- approve a pending sample
-- reject a pending sample
-- retrain from approved samples only
-
-Approved samples are appended to:
-
-```text
-version 2/data/approved_samples.pkl
-```
-
-When retraining in v2:
-
-- a new versioned model is created
-- 5-fold evaluation is run
-- before/after accuracy is printed
-- the model is promoted to active only after evaluation
-
-## Running the Apps
-
-Root app:
-
-```powershell
+```bash
+pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Version 2 app:
+---
 
-```powershell
-streamlit run "version 2\app.py"
+## Admin Panel
+
+Set the environment variable before running:
+
+```bash
+# Windows
+set STRESS_APP_ADMIN_PASSWORD=yourpassword
+
+# Linux / Mac
+export STRESS_APP_ADMIN_PASSWORD=yourpassword
 ```
 
-## Disclaimer
+Then open the **Admin** page in the sidebar. From there you can:
+- Review and approve / reject user-submitted corrections
+- Retrain the model from the base dataset + approved samples
+- The new model is only promoted if its accuracy is equal or better
 
-This repository is for **educational and experimental use only**. It is **not** a clinical, medical, or diagnostic tool.
+---
+
+## Retrain from CLI
+
+```bash
+python train_model.py --feature-mode hog --promote-active
+```
+
+Options:
+- `--feature-mode` — `hog` (default) or `raw_pixels`
+- `--promote-active` — overwrite the active model if accuracy improves
+- `--without-handwriting-features` — disable the 3 derived handwriting features
+- `--version` — set a specific version string (e.g. `v2.0.0`)
+
+---
+
+## Labels
+
+| Code | Label |
+|------|-------|
+| 0 | Low Stress |
+| 1 | Medium Stress |
+| 2 | High Stress |
+
+---
+
+## Dataset
+
+- 30 handwriting samples (10 per class), 128×128 px grayscale
+- Stored in `model/preprocessed_data.pkl`
+- Small dataset — treat all predictions as experimental

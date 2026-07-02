@@ -1,7 +1,0 @@
-{
-  "feature_mode": "hog",
-  "include_handwriting_features": true,
-  "training_samples": 30,
-  "feature_count": 8103,
-  "validation_accuracy": 0.3333333333333333
-}

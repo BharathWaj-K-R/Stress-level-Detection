@@ -1,9 +1,0 @@
-.git
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.pytest_cache/
-reports/
-version 2/data/pending_review/
-version 2/data/reviewed/

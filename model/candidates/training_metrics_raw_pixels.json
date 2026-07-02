@@ -1,7 +1,0 @@
-{
-  "feature_mode": "raw_pixels",
-  "include_handwriting_features": true,
-  "training_samples": 30,
-  "feature_count": 16387,
-  "validation_accuracy": 0.16666666666666666
-}
