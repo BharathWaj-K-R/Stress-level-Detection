@@ -118,23 +118,23 @@ python -m compileall -q .
 
 ## Streamlit Community Cloud
 
-The repository is structured for Streamlit Community Cloud:
+The repository is organized for Streamlit Community Cloud with `app.py` as the root entrypoint, `requirements.txt` at the repository root, and `.streamlit/config.toml` for application configuration.
 
 1. Select this GitHub repository.
-2. Select the branch containing the release you want to deploy.
+2. Select the branch you want to deploy.
 3. Set the entrypoint to `app.py`.
-4. Use Python 3.11 in the deployment settings if that is the Python version used by the existing deployment.
-5. Keep the root `requirements.txt` as the single dependency declaration.
+4. Keep the deployment Python version aligned with the version used for development and CI. The current project CI uses Python 3.11.
+5. Keep `requirements.txt` as the app's single dependency file.
 
-The project does **not** require a database, external API, sign-in provider, secrets, or writable server-side storage for normal inference.
-
-The deployment configuration lives at `.streamlit/config.toml` and limits uploads to 5 MB while selecting the light theme. Streamlit Community Cloud documents that configuration files belong under `.streamlit/config.toml` and Python dependencies can be declared in the root `requirements.txt`. citeturn460996search1turn460996search0
+The application needs no database, sign-in provider, external inference API, secrets, or writable server-side runtime store for normal inference.
 
 ### Deployment safety
 
-The redesigned application deliberately avoids application-owned runtime persistence. Streamlit Community Cloud creates and updates the application from the configured GitHub repository, and dependency changes can trigger an environment rebuild. citeturn460996search3
+The redesigned application avoids application-owned persistent runtime files. The UI stores its analysis history in Streamlit session state and creates export files in memory for direct download.
 
-For an already-running deployment, deploy the redesign from its dedicated branch first. Do not change the live application's configured branch until you have validated the new branch in a separate deployment target.
+For an already-running Community Cloud app, keep the current deployed branch unchanged until you have validated this redesign on a separate app or deployment target. After validation, switch the production app's configured branch deliberately rather than changing the live branch underneath it.
+
+Streamlit Community Cloud uses the repository as the source for deployed apps and automatically rebuilds environments when dependency changes are detected. Its documented project layout uses a root dependency file and `.streamlit/config.toml` for configuration.
 
 ## Model and data limitations
 
