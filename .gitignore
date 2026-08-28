@@ -1,9 +1,15 @@
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
 .DS_Store
 Thumbs.db
 
-version 2/data/prediction_history.csv
-version 2/data/user_training_samples.pkl
+# Local Python environments
+.venv/
+venv/
+
+# Streamlit local secrets
+.streamlit/secrets.toml
+
+# OS/editor noise
+.vscode/
+.idea/

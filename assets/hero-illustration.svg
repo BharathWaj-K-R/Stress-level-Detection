@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 360" role="img" aria-label="Brain and pen handwriting analysis illustration">
+  <defs>
+    <linearGradient id="fade" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#111111" stop-opacity=".08"/>
+      <stop offset="1" stop-color="#111111" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <path d="M0 245 C85 205 145 278 230 235 C307 196 355 250 430 220 C510 188 592 235 760 170" fill="none" stroke="#161616" stroke-opacity=".06" stroke-width="2"/>
+  <path d="M0 265 C85 225 145 298 230 255 C307 216 355 270 430 240 C510 208 592 255 760 190" fill="none" stroke="#161616" stroke-opacity=".035" stroke-width="2"/>
+  <path d="M0 285 C85 245 145 318 230 275 C307 236 355 290 430 260 C510 228 592 275 760 210" fill="none" stroke="#161616" stroke-opacity=".025" stroke-width="2"/>
+  <circle cx="575" cy="122" r="92" fill="url(#fade)"/>
+  <g fill="none" stroke="#8a8a84" stroke-width="2" stroke-linecap="round">
+    <path d="M510 86c-20-30-4-58 25-57 8-26 47-35 67-10 19-17 53-5 56 19 27 3 44 34 29 57 10 30-14 58-44 53-15 24-54 22-69-2-24 7-51-11-54-35-12-8-17-18-10-25z"/>
+    <path d="M540 85c14 4 22 13 23 27M573 41c3 16 1 29-8 40M613 47c-12 9-18 21-16 36M648 74c-15 2-25 9-31 21M528 118c15-3 25-1 37 9M573 123c15-4 29 0 38 12M618 117c10 7 17 17 18 29"/>
+    <path d="M596 82c-5 10-6 19-2 29M558 69c10 1 17 7 21 15M631 89c-8 8-10 17-8 26"/>
+  </g>
+  <g fill="none" stroke="#111111" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M585 210 C625 193 649 173 676 143" stroke-width="5"/>
+    <path d="M659 128 l26 -30 l18 15 l-31 30" stroke-width="5"/>
+    <path d="M697 113 l9 -17 l13 11 l-17 10" stroke-width="5"/>
+    <path d="M676 143 l10 10" stroke="#6e6e68" stroke-width="3"/>
+    <path d="M585 210 C548 228 506 238 470 235 C439 232 417 219 395 223 C371 228 359 246 337 246 C317 246 308 233 292 235" stroke="#111111" stroke-width="3"/>
+  </g>
+  <path d="M0 330 C100 278 175 318 265 295 C355 272 420 310 510 279 C590 252 675 278 760 248" fill="none" stroke="#111111" stroke-opacity=".04" stroke-width="1"/>
+</svg>
