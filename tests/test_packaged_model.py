@@ -30,4 +30,4 @@ def test_packaged_model_loads_and_predicts():
 
     if result["probability_map"]:
         total = sum(result["probability_map"].values())
-        assert total == np.testing.assert_allclose(total, 1.0, rtol=1e-6, atol=1e-6)
+        np.testing.assert_allclose(total, 1.0, rtol=1e-6, atol=1e-6)
