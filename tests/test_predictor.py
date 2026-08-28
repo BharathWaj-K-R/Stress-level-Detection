@@ -11,7 +11,6 @@ from inference.predictor import (
     pil_to_normalized_array,
     validate_uploaded_file,
 )
-from preprocessing.feature_extraction import FeatureExtractionConfig
 
 
 class Upload:
@@ -22,6 +21,11 @@ class Upload:
 
     def getvalue(self):
         return self._payload
+
+
+class DummyModel:
+    def predict(self, features):
+        return np.array([0])
 
 
 def make_png(width=320, height=180):
@@ -68,16 +72,11 @@ def test_pil_to_normalized_array_preserves_aspect_ratio_with_padding():
     image = Image.new("L", (320, 160), color=255)
     array = pil_to_normalized_array(image, image_size=128)
     assert array.shape == (128, 128)
-    # The 2:1 image should occupy a 128x64 region, leaving padding vertically.
     assert np.allclose(array[:32], 1.0)
     assert np.allclose(array[-32:], 1.0)
 
 
 def test_model_bundle_can_be_loaded_from_joblib(tmp_path):
-    class DummyModel:
-        def predict(self, features):
-            return np.array([0])
-
     model_path = tmp_path / "model.pkl"
     joblib.dump(
         {
