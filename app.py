@@ -1,26 +1,23 @@
-from datetime import datetime
-from pathlib import Path
+from __future__ import annotations
+
 import csv
 import io
 import json
-import os
-import shutil
-import uuid
+from datetime import datetime, timezone
+from pathlib import Path
 
-import joblib
 import numpy as np
 import streamlit as st
 from PIL import Image
 
 from inference.predictor import (
+    extract_features_for_bundle,
     load_model_bundle,
     open_uploaded_image,
-    pil_to_normalized_array,
     predict_with_bundle,
     validate_uploaded_file,
 )
 from preprocessing.quality_check import run_quality_checks
-from train_model import train_model
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -28,480 +25,485 @@ MODEL_DIR = BASE_DIR / "model"
 MODEL_PATH = MODEL_DIR / "stress_model.pkl"
 LABEL_MAP_PATH = MODEL_DIR / "label_mapping.json"
 METADATA_PATH = MODEL_DIR / "metadata.json"
-
-DATA_DIR = BASE_DIR / "data"
-HISTORY_PATH = DATA_DIR / "prediction_history.csv"
-PENDING_DIR = DATA_DIR / "pending_review"
-APPROVED_SAMPLES_PATH = DATA_DIR / "approved_samples.pkl"
-APPROVED_ARCHIVE_DIR = DATA_DIR / "reviewed" / "approved"
-REJECTED_ARCHIVE_DIR = DATA_DIR / "reviewed" / "rejected"
-
 IMG_SIZE = 128
-STRESS_OPTIONS = {"Low Stress": 0, "Medium Stress": 1, "High Stress": 2}
+APP_VERSION = "2.0.0"
+STRESS_LABELS = ("Low Stress", "Medium Stress", "High Stress")
 
 st.set_page_config(
-    page_title="Stress Level Detection",
-    page_icon="✍️",
+    page_title="Stress Classification Lab",
+    page_icon="◌",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-st.markdown(
-    """
-    <style>
-    [data-testid="stSidebar"] {
-        background: #0f1c18;
-    }
-    [data-testid="stSidebar"] * {
-        color: #d4e8df !important;
-    }
-    .header-banner {
-        padding: 1.6rem 2rem;
-        border-radius: 16px;
-        background: linear-gradient(135deg, #0d2218 0%, #1a4332 60%, #0d2218 100%);
-        border: 1px solid #1e4d36;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.35);
-        margin-bottom: 1.5rem;
-    }
-    .header-banner h1 {
-        color: #e8f5ee;
-        font-size: 2rem;
-        font-weight: 800;
-        margin: 0 0 0.3rem 0;
-        letter-spacing: -0.03em;
-    }
-    .header-banner p {
-        color: #9ecfb5;
-        font-size: 0.95rem;
-        margin: 0;
-    }
-    .result-card {
-        padding: 1.4rem 1.8rem;
-        border-radius: 14px;
-        background: #0d2218;
-        border: 1px solid #1e4d36;
-        box-shadow: 0 4px 16px rgba(0,0,0,0.25);
-        margin: 0.8rem 0;
-        text-align: center;
-    }
-    .result-card .label {
-        font-size: 0.85rem;
-        color: #9ecfb5;
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
-        margin-bottom: 0.3rem;
-    }
-    .result-card .value {
-        font-size: 2rem;
-        font-weight: 800;
-        color: #5de8a0;
-    }
-    .metric-row {
-        display: flex;
-        gap: 1rem;
-        margin: 0.8rem 0;
-    }
-    .metric-box {
-        flex: 1;
-        background: #0d2218;
-        border: 1px solid #1e4d36;
-        border-radius: 10px;
-        padding: 0.8rem 1rem;
-        text-align: center;
-    }
-    .metric-box .m-label {
-        font-size: 0.75rem;
-        color: #9ecfb5;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-    }
-    .metric-box .m-value {
-        font-size: 1.25rem;
-        font-weight: 700;
-        color: #e8f5ee;
-    }
-    hr { border-color: #1e4d36 !important; }
-    .stButton > button[kind="primary"] {
-        background: #1a6641 !important;
-        border: none !important;
-        color: #e8f5ee !important;
-        font-weight: 600 !important;
-    }
-    .stButton > button[kind="primary"]:hover {
-        background: #22854f !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
 
-
-@st.cache_resource
-def load_model():
-    return load_model_bundle(MODEL_PATH, label_map_path=LABEL_MAP_PATH, metadata_path=METADATA_PATH)
-
-
-def save_history(source: str, image_name: str, predicted_label: str) -> None:
-    HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
-    rows = []
-    if HISTORY_PATH.exists():
-        with HISTORY_PATH.open("r", encoding="utf-8") as f:
-            rows = list(csv.DictReader(f))
-    rows.append(
-        {
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "source": source,
-            "image_name": image_name,
-            "prediction": predicted_label,
-        }
+@st.cache_resource(show_spinner=False)
+def load_model() -> dict:
+    bundle = load_model_bundle(
+        MODEL_PATH,
+        label_map_path=LABEL_MAP_PATH,
+        metadata_path=METADATA_PATH,
     )
-    with HISTORY_PATH.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=["timestamp", "source", "image_name", "prediction"])
-        writer.writeheader()
-        writer.writerows(rows)
+    validate_model_bundle(bundle)
+    return bundle
 
 
-def build_report(source: str, image_name: str, label: str, warnings: list) -> str:
-    issues = "None detected." if not warnings else "\n".join(f"  • {w}" for w in warnings)
-    return (
-        f"Stress Level Detection Report\n"
-        f"{'=' * 40}\n"
-        f"Generated : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-        f"Source    : {source}\n"
-        f"File      : {image_name}\n"
-        f"Result    : {label}\n\n"
-        f"Image Quality Notes:\n{issues}\n\n"
-        f"Disclaimer:\n"
-        f"This result is for educational purposes only.\n"
-        f"It is not a medical diagnosis or clinical assessment.\n"
-    )
+def validate_model_bundle(bundle: dict) -> None:
+    model = bundle.get("model")
+    if model is None or not hasattr(model, "predict"):
+        raise RuntimeError("The packaged model does not expose a prediction interface.")
 
+    metadata = bundle.get("metadata", {})
+    configured_size = int(metadata.get("image_size", IMG_SIZE))
+    if configured_size != IMG_SIZE:
+        raise RuntimeError(
+            f"Model image size {configured_size} does not match app image size {IMG_SIZE}."
+        )
 
-def queue_for_review(image: Image.Image, source: str, name: str, predicted: str, actual: str) -> str:
-    PENDING_DIR.mkdir(parents=True, exist_ok=True)
-    record_id = datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex[:8]
-    record = {
-        "id": record_id,
-        "created_at": datetime.now().isoformat(),
-        "source": source,
-        "image_name": name,
-        "predicted_label": predicted,
-        "actual_label": actual,
-        "image_array": pil_to_normalized_array(image, image_size=IMG_SIZE),
-    }
-    joblib.dump(record, PENDING_DIR / f"{record_id}.joblib")
-    return record_id
-
-
-def list_pending() -> list:
-    PENDING_DIR.mkdir(parents=True, exist_ok=True)
-    return sorted(PENDING_DIR.glob("*.joblib"))
-
-
-def load_approved_samples():
-    if not APPROVED_SAMPLES_PATH.exists():
-        return np.empty((0, IMG_SIZE, IMG_SIZE), dtype=np.float32), np.empty((0,), dtype=np.int64)
-    imgs, labels = joblib.load(APPROVED_SAMPLES_PATH)
-    return np.asarray(imgs, dtype=np.float32), np.asarray(labels, dtype=np.int64)
-
-
-def save_approved_samples(imgs, labels) -> None:
-    APPROVED_SAMPLES_PATH.parent.mkdir(parents=True, exist_ok=True)
-    joblib.dump((imgs, labels), APPROVED_SAMPLES_PATH)
-
-
-def approve_record(path: Path) -> None:
-    record = joblib.load(path)
-    imgs, labels = load_approved_samples()
-    arr = np.asarray(record["image_array"], dtype=np.float32).reshape(1, IMG_SIZE, IMG_SIZE)
-    lbl = np.asarray([STRESS_OPTIONS[record["actual_label"]]], dtype=np.int64)
-    imgs = np.concatenate([imgs, arr], axis=0)
-    labels = np.concatenate([labels, lbl], axis=0)
-    save_approved_samples(imgs, labels)
-    APPROVED_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(path), str(APPROVED_ARCHIVE_DIR / path.name))
-
-
-def reject_record(path: Path) -> None:
-    REJECTED_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(path), str(REJECTED_ARCHIVE_DIR / path.name))
-
-
-with st.sidebar:
-    st.markdown("## ✍️ Stress Detection")
-    st.markdown("---")
-    page = st.radio(
-        "Navigation",
-        ["Predict", "History", "Admin"],
-        label_visibility="collapsed",
-    )
-    st.markdown("---")
-
-    try:
-        bundle = load_model()
-        meta = bundle.get("metadata", {})
-        version = meta.get("semantic_version") or meta.get("version", "—")
-        mode = meta.get("feature_extraction_method", "—")
-        st.markdown(f"**Model version:** `{version}`")
-        st.markdown(f"**Feature mode:** `{mode}`")
-    except Exception:
-        bundle = None
-
-    st.markdown("---")
-    st.caption("Educational project only — not a clinical tool.")
-
-
-st.markdown(
-    """
-    <div class="header-banner">
-        <h1>✍️ Stress Level Detection from Handwriting</h1>
-        <p>Upload or capture a handwriting sample to analyse stress indicators using machine learning.</p>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-st.warning(
-    "⚠️ Experimental / educational project only. Not a medical or clinical diagnostic tool.",
-    icon=None,
-)
-
-if bundle is None:
-    st.error("Failed to load model. Please check that model files exist.")
-    st.stop()
-
-
-if page == "Predict":
-    left, right = st.columns([1.1, 0.9], gap="large")
-
-    with left:
-        st.subheader("Input")
-        input_mode = st.radio("Input method", ["Upload Image", "Camera Capture"], horizontal=True)
-        if input_mode == "Upload Image":
-            image_file = st.file_uploader(
-                "Choose a handwriting image", type=["jpg", "jpeg", "png"], label_visibility="collapsed"
+    if hasattr(model, "n_features_in_"):
+        sample = Image.fromarray(np.full((IMG_SIZE, IMG_SIZE), 255, dtype=np.uint8))
+        produced = int(
+            extract_features_for_bundle(bundle, sample, image_size=IMG_SIZE).shape[1]
+        )
+        expected = int(model.n_features_in_)
+        if produced != expected:
+            raise RuntimeError(
+                f"Model feature mismatch: artifact expects {expected}, pipeline produces {produced}."
             )
-            source = "Upload"
-        else:
-            image_file = st.camera_input("Capture handwriting")
-            source = "Camera"
 
-        if image_file is not None:
-            ok, msg = validate_uploaded_file(image_file)
-            if not ok:
-                st.error(msg)
-                st.stop()
-            display = Image.open(io.BytesIO(image_file.getvalue()))
-            st.image(display, caption="Selected image", use_container_width=True)
+
+def inject_css() -> None:
+    st.markdown(
+        """
+        <style>
+        :root {
+            --bg: #f7f7f5;
+            --surface: #ffffff;
+            --surface-soft: #f0f0ed;
+            --border: #d7d7d2;
+            --text: #121212;
+            --muted: #686864;
+            --black: #000000;
+        }
+        .stApp { background: var(--bg); color: var(--text); }
+        [data-testid="stSidebar"] { background: #ffffff; border-right: 1px solid var(--border); }
+        [data-testid="stSidebar"] * { color: var(--text) !important; }
+        .shell { border-bottom: 1px solid var(--border); padding-bottom: 1.35rem; margin-bottom: 1.5rem; }
+        .eyebrow { font-size: .68rem; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+        .title { margin: .25rem 0 0; font-size: clamp(2.15rem, 4vw, 3.4rem); line-height: .98; letter-spacing: -.055em; font-weight: 850; color: var(--black); }
+        .subtitle { max-width: 760px; margin-top: .75rem; color: var(--muted); line-height: 1.6; font-size: .95rem; }
+        .status { margin-top: .85rem; color: var(--muted); font-size: .78rem; }
+        .status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #111; margin-right: .45rem; }
+        .surface { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 1.15rem; }
+        .hero-result { background: #111111; color: #fff; border-radius: 14px; padding: 1.45rem; }
+        .result-label { color: #a8a8a3; font-size: .68rem; letter-spacing: .14em; text-transform: uppercase; }
+        .result-value { margin-top: .3rem; font-size: clamp(2.1rem, 4vw, 3.25rem); font-weight: 850; letter-spacing: -.055em; line-height: 1; }
+        .result-meta { color: #d2d2cd; font-size: .82rem; margin-top: .8rem; line-height: 1.55; }
+        .metric-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: .9rem; min-height: 92px; }
+        .metric-label { color: var(--muted); font-size: .67rem; text-transform: uppercase; letter-spacing: .1em; }
+        .metric-value { color: var(--black); font-size: 1.26rem; font-weight: 780; margin-top: .25rem; }
+        .mini { color: var(--muted); font-size: .8rem; line-height: 1.55; }
+        .step { display: flex; gap: .8rem; padding: .8rem 0; border-bottom: 1px solid var(--border); }
+        .step:last-child { border-bottom: 0; }
+        .step-num { flex: 0 0 25px; width: 25px; height: 25px; border: 1px solid var(--border); border-radius: 50%; display:flex; align-items:center; justify-content:center; font-size:.7rem; font-weight:750; }
+        .footer { border-top: 1px solid var(--border); margin-top: 2.5rem; padding-top: 1rem; color: #777771; font-size: .7rem; line-height:1.55; }
+        .stButton > button, .stDownloadButton > button { background:#111 !important; color:#fff !important; border:1px solid #111 !important; border-radius:9px !important; font-weight:750 !important; min-height:2.55rem; }
+        .stButton > button:hover, .stDownloadButton > button:hover { background:#383836 !important; border-color:#383836 !important; }
+        div[data-testid="stFileUploader"] { background:#fff; border:1px dashed #bcbcb7; border-radius:12px; padding:.35rem; }
+        .stTabs [data-baseweb="tab"] { color: var(--muted); }
+        @media (max-width: 720px) { .title { font-size:2.25rem; } .surface, .hero-result { padding:1rem; } }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def init_session() -> None:
+    st.session_state.setdefault("history", [])
+    st.session_state.setdefault("feedback", [])
+    st.session_state.setdefault("latest_result", None)
+
+
+def render_header(bundle: dict) -> None:
+    metadata = bundle.get("metadata", {})
+    version = metadata.get("semantic_version") or metadata.get("version", "legacy")
+    mode = metadata.get("feature_extraction_method", "unknown")
+    st.markdown(
+        f"""
+        <div class="shell">
+            <div class="eyebrow">HANDWRITING ANALYSIS / EXPERIMENTAL SYSTEM</div>
+            <h1 class="title">Stress Classification Lab</h1>
+            <div class="subtitle">
+                A privacy-conscious browser application for experimental classification of handwriting
+                samples. There are no user accounts, no sign-in flow, and no database.
+            </div>
+            <div class="status"><span class="status-dot"></span>Model {version} · {mode} · application {APP_VERSION}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_sidebar(bundle: dict) -> str:
+    metadata = bundle.get("metadata", {})
+    with st.sidebar:
+        st.markdown("### Stress Classification Lab")
+        st.caption("Monochrome light edition")
+        st.divider()
+        page = st.radio(
+            "Workspace",
+            ["Analyze", "Session history", "Methodology", "System"],
+            label_visibility="collapsed",
+        )
+        st.divider()
+        st.markdown("**Local-session architecture**")
+        st.caption(
+            "Analysis results exist only in Streamlit session state. Export them when you need a copy."
+        )
+        st.divider()
+        st.markdown(
+            f"**Model**  \n`{metadata.get('semantic_version') or metadata.get('version', 'legacy')}`"
+        )
+        st.markdown(
+            f"**Feature mode**  \n`{metadata.get('feature_extraction_method', 'unknown')}`"
+        )
+    return page
+
+
+def quality_cards(checks: dict) -> None:
+    metrics = checks.get("metrics", {})
+    resolution = metrics.get("resolution", {})
+    items = [
+        ("Resolution", f"{resolution.get('width', '?')} × {resolution.get('height', '?')}"),
+        ("Ink density", f"{metrics.get('ink_density_ratio', 0.0):.1%}"),
+        ("Sharpness", f"{metrics.get('laplacian_variance', 0.0):.4f}"),
+    ]
+    columns = st.columns(3)
+    for column, (label, value) in zip(columns, items):
+        column.markdown(
+            f"<div class='metric-card'><div class='metric-label'>{label}</div>"
+            f"<div class='metric-value'>{value}</div></div>",
+            unsafe_allow_html=True,
+        )
+
+
+def build_record(bundle: dict, result: dict, checks: dict, source: str, filename: str) -> dict:
+    probabilities = result.get("probability_map") or {}
+    confidence = max(probabilities.values()) if probabilities else 0.0
+    metadata = bundle.get("metadata", {})
+    metrics = checks.get("metrics", {})
+    resolution = metrics.get("resolution", {})
+    version = metadata.get("semantic_version") or metadata.get("version", "legacy")
+    return {
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "source": source,
+        "filename": filename,
+        "prediction": result["predicted_label"],
+        "confidence": float(confidence),
+        "probability_map": {k: float(v) for k, v in probabilities.items()},
+        "model_version": version,
+        "feature_mode": metadata.get("feature_extraction_method", "unknown"),
+        "ink_density_ratio": float(metrics.get("ink_density_ratio", 0.0)),
+        "laplacian_variance": float(metrics.get("laplacian_variance", 0.0)),
+        "resolution": f"{resolution.get('width', '?')} × {resolution.get('height', '?')}",
+    }
+
+
+def build_report(record: dict) -> str:
+    probabilities = record.get("probability_map") or {}
+    probability_text = "\n".join(
+        f"  {label}: {value:.2%}" for label, value in probabilities.items()
+    ) or "  Not available"
+    return (
+        "STRESS CLASSIFICATION LAB\n"
+        "=========================\n"
+        f"Generated (UTC) : {record['timestamp_utc']}\n"
+        f"Source          : {record['source']}\n"
+        f"File            : {record['filename']}\n"
+        f"Prediction      : {record['prediction']}\n"
+        f"Confidence      : {record['confidence']:.2%}\n"
+        f"Model version   : {record['model_version']}\n"
+        f"Feature mode    : {record['feature_mode']}\n\n"
+        "CLASS DISTRIBUTION\n"
+        f"{probability_text}\n\n"
+        "INPUT QUALITY\n"
+        f"  Resolution        : {record['resolution']}\n"
+        f"  Ink density      : {record['ink_density_ratio']:.2%}\n"
+        f"  Laplacian metric : {record['laplacian_variance']:.6f}\n\n"
+        "LIMITATION\n"
+        "This is an experimental classification result. It is not a measurement, diagnosis, "
+        "or clinical assessment of psychological stress. Do not use it for health, employment, "
+        "academic, safety, or other high-impact decisions.\n"
+    )
+
+
+def history_csv(rows: list[dict]) -> str:
+    output = io.StringIO()
+    fields = [
+        "timestamp_utc",
+        "source",
+        "filename",
+        "prediction",
+        "confidence",
+        "ink_density_ratio",
+        "laplacian_variance",
+        "resolution",
+        "model_version",
+    ]
+    writer = csv.DictWriter(output, fieldnames=fields)
+    writer.writeheader()
+    for row in rows:
+        writer.writerow({field: row.get(field, "") for field in fields})
+    return output.getvalue()
+
+
+def analyze_page(bundle: dict) -> None:
+    st.markdown("## Analyze")
+    st.caption("Upload or capture a clear handwriting sample. Accepted formats: JPG, JPEG, PNG. Maximum: 5 MB.")
+
+    left, right = st.columns([1.05, 0.95], gap="large")
+    with left:
+        with st.container(border=True):
+            method = st.radio("Input source", ["Upload image", "Camera"], horizontal=True)
+            if method == "Upload image":
+                uploaded = st.file_uploader(
+                    "Choose handwriting image",
+                    type=["jpg", "jpeg", "png"],
+                    accept_multiple_files=False,
+                )
+            else:
+                uploaded = st.camera_input("Capture handwriting")
+
+            if uploaded is not None:
+                valid, message = validate_uploaded_file(uploaded)
+                if not valid:
+                    st.error(message)
+                    return
+                preview = Image.open(io.BytesIO(uploaded.getvalue()))
+                st.image(preview, caption="Input sample", use_container_width=True)
 
     with right:
-        st.subheader("Result")
+        with st.container(border=True):
+            st.markdown("### Quality gate")
+            if uploaded is None:
+                st.markdown(
+                    "<div class='mini'>Provide a sample to validate resolution, sharpness, and visible ink before model inference.</div>",
+                    unsafe_allow_html=True,
+                )
+                return
 
-        if image_file is None:
-            st.info("Provide a handwriting image on the left to begin.")
-        else:
-            if st.button("Analyse Stress Level", type="primary", use_container_width=True):
-                image = open_uploaded_image(image_file)
-                if image is None:
-                    st.error("Could not read image. Please upload a valid JPG or PNG.")
-                    st.stop()
+            image = open_uploaded_image(uploaded)
+            if image is None:
+                st.error("The image could not be decoded. Upload a valid JPG, JPEG, or PNG file.")
+                return
 
-                raw = np.asarray(image, dtype=np.float32)
-                checks = run_quality_checks(raw)
+            checks = run_quality_checks(np.asarray(image, dtype=np.float32))
+            quality_cards(checks)
+            if not checks["passed"]:
+                st.warning("The quality gate rejected this sample.")
+                for item in checks["warnings"]:
+                    st.write(f"• {item}")
+                return
 
-                if not checks["passed"]:
-                    for w in checks["warnings"]:
-                        st.warning(w)
-                    st.stop()
-
-                with st.spinner("Analysing…"):
+            st.success("Quality gate passed.")
+            if st.button("Analyze sample", type="primary", use_container_width=True):
+                with st.spinner("Extracting features and evaluating the model…"):
                     result = predict_with_bundle(bundle, image, image_size=IMG_SIZE)
+                filename = getattr(uploaded, "name", "camera_capture.jpg")
+                source = "Camera" if method == "Camera" else "Upload"
+                record = build_record(bundle, result, checks, source, filename)
+                st.session_state["latest_result"] = record
+                st.session_state["history"].append(record)
 
-                label = result["predicted_label"]
-                prob_map = result.get("probability_map", {})
-
-                st.markdown(
-                    f"""
-                    <div class="result-card">
-                        <div class="label">Predicted Stress Level</div>
-                        <div class="value">{label}</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-                m = checks["metrics"]
-                ink = m.get("ink_density_ratio", 0)
-                blur = m.get("laplacian_variance", 0)
-                res = m.get("resolution", {})
-                st.markdown(
-                    f"""
-                    <div class="metric-row">
-                        <div class="metric-box">
-                            <div class="m-label">Resolution</div>
-                            <div class="m-value">{res.get('width','?')}×{res.get('height','?')}</div>
-                        </div>
-                        <div class="metric-box">
-                            <div class="m-label">Ink Density</div>
-                            <div class="m-value">{ink:.1%}</div>
-                        </div>
-                        <div class="metric-box">
-                            <div class="m-label">Sharpness</div>
-                            <div class="m-value">{blur:.4f}</div>
-                        </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-                if prob_map:
-                    st.markdown("**Class probabilities**")
-                    st.bar_chart(prob_map, use_container_width=True)
-
-                image_name = getattr(image_file, "name", "camera_capture.jpg")
-                save_history(source, image_name, label)
-                st.session_state["latest"] = {
-                    "image": image,
-                    "label": label,
-                    "name": image_name,
-                    "source": source,
-                    "warnings": checks["warnings"],
-                }
-
-                report = build_report(source, image_name, label, checks["warnings"])
-                st.download_button(
-                    "⬇ Download Report",
-                    data=report,
-                    file_name="stress_report.txt",
-                    mime="text/plain",
-                    use_container_width=True,
-                )
-
-    latest = st.session_state.get("latest")
-    if latest:
-        st.divider()
-        with st.expander("📝 Submit a correction for review", expanded=False):
-            st.caption(
-                "If the prediction seems wrong, select the correct label and submit. "
-                "Your sample will be reviewed before it can be used for retraining."
+        latest = st.session_state.get("latest_result")
+        if latest:
+            st.markdown("### Result")
+            st.markdown(
+                f"""
+                <div class="hero-result">
+                    <div class="result-label">Predicted class</div>
+                    <div class="result-value">{latest['prediction']}</div>
+                    <div class="result-meta">Confidence estimate: <strong>{latest['confidence']:.1%}</strong><br>
+                    Experimental classification only. Not a clinical measurement.</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
             )
-            keys = list(STRESS_OPTIONS.keys())
-            default_idx = keys.index(latest["label"]) if latest["label"] in keys else 0
-            actual = st.selectbox("Correct stress level", keys, index=default_idx)
-            if st.button("Submit for Admin Review", use_container_width=True):
-                rid = queue_for_review(
-                    latest["image"], latest["source"], latest["name"],
-                    latest["label"], actual,
-                )
-                st.success(f"Submitted for review (ID: `{rid}`)")
-
-
-elif page == "History":
-    st.subheader("Prediction History")
-
-    if not HISTORY_PATH.exists():
-        st.info("No predictions recorded yet.")
-    else:
-        with HISTORY_PATH.open("r", encoding="utf-8") as f:
-            rows = list(csv.DictReader(f))
-
-        if not rows:
-            st.info("No predictions recorded yet.")
-        else:
-            st.caption(f"Showing last {min(len(rows), 20)} of {len(rows)} records.")
-            st.dataframe(rows[-20:][::-1], use_container_width=True)
+            st.markdown("#### Class distribution")
+            if latest.get("probability_map"):
+                st.bar_chart(latest["probability_map"], height=220)
             st.download_button(
-                "⬇ Download Full History CSV",
-                data=HISTORY_PATH.read_text(encoding="utf-8"),
-                file_name="prediction_history.csv",
-                mime="text/csv",
+                "Download analysis report",
+                data=build_report(latest),
+                file_name="stress-classification-report.txt",
+                mime="text/plain",
+                use_container_width=True,
             )
 
-
-elif page == "Admin":
-    st.subheader("Admin Panel")
-
-    admin_password = os.getenv("STRESS_APP_ADMIN_PASSWORD", "")
-    if not admin_password:
-        st.info(
-            "Admin access is disabled. Set the `STRESS_APP_ADMIN_PASSWORD` "
-            "environment variable to enable it.",
-            icon="🔒",
-        )
-        st.stop()
-
-    entered = st.text_input("Admin password", type="password", placeholder="Enter password…")
-    if entered != admin_password:
-        if entered:
-            st.error("Incorrect password.")
-        st.stop()
-
-    st.success("Authenticated.", icon="✅")
-    st.divider()
-
-    pending = list_pending()
-    approved_imgs, _ = load_approved_samples()
-    col1, col2 = st.columns(2)
-    col1.metric("Pending samples", len(pending))
-    col2.metric("Approved samples", len(approved_imgs))
-
-    st.divider()
-    st.subheader("Pending Review")
-
-    if not pending:
-        st.success("No pending samples.")
-    else:
-        for path in pending:
-            record = joblib.load(path)
-            img = Image.fromarray((record["image_array"] * 255).astype(np.uint8))
-            with st.container(border=True):
-                c1, c2 = st.columns([1, 2])
-                with c1:
-                    st.image(img, width=180)
-                with c2:
-                    st.markdown(f"**{record['image_name']}**")
-                    st.caption(
-                        f"Submitted: {record['created_at'][:19]}  \n"
-                        f"Predicted: **{record['predicted_label']}**  \n"
-                        f"Reviewer label: **{record['actual_label']}**"
+            with st.expander("Add a correction note"):
+                proposed = st.selectbox("Your proposed label", list(STRESS_LABELS))
+                note = st.text_area("Optional note", placeholder="Describe why the classification appears incorrect.")
+                if st.button("Save to session review queue"):
+                    st.session_state["feedback"].append(
+                        {
+                            "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+                            "filename": latest["filename"],
+                            "prediction": latest["prediction"],
+                            "proposed_label": proposed,
+                            "note": note.strip(),
+                        }
                     )
-                    b1, b2 = st.columns(2)
-                    with b1:
-                        if st.button("✅ Approve", key=f"ap_{record['id']}", use_container_width=True):
-                            approve_record(path)
-                            st.rerun()
-                    with b2:
-                        if st.button("❌ Reject", key=f"rj_{record['id']}", use_container_width=True):
-                            reject_record(path)
-                            st.rerun()
+                    st.success("Correction saved for this session.")
 
-    st.divider()
-    st.subheader("Retrain Model")
-    st.caption(
-        "Retrains using the base dataset plus all approved samples. "
-        "The new model is promoted only if its accuracy matches or exceeds the current one."
+
+def history_page() -> None:
+    st.markdown("## Session history")
+    rows = st.session_state.get("history", [])
+    feedback = st.session_state.get("feedback", [])
+    if not rows:
+        st.info("No analyses have been run in this browser session.")
+        return
+
+    avg_conf = sum(row["confidence"] for row in rows) / len(rows)
+    counts = {label: sum(row["prediction"] == label for row in rows) for label in STRESS_LABELS}
+    c1, c2, c3, c4 = st.columns(4)
+    for column, label, value in [
+        (c1, "Analyses", len(rows)),
+        (c2, "Avg confidence", f"{avg_conf:.1%}"),
+        (c3, "High stress", counts["High Stress"]),
+        (c4, "Review items", len(feedback)),
+    ]:
+        column.markdown(
+            f"<div class='metric-card'><div class='metric-label'>{label}</div>"
+            f"<div class='metric-value'>{value}</div></div>",
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("### Prediction distribution")
+    st.bar_chart(counts, height=230)
+
+    st.markdown("### Analysis log")
+    table = [
+        {
+            "Time (UTC)": row["timestamp_utc"],
+            "Prediction": row["prediction"],
+            "Confidence": f"{row['confidence']:.1%}",
+            "Source": row["source"],
+            "File": row["filename"],
+            "Model": row["model_version"],
+        }
+        for row in reversed(rows)
+    ]
+    st.dataframe(table, use_container_width=True, hide_index=True)
+    st.download_button(
+        "Download session CSV",
+        data=history_csv(rows),
+        file_name="stress-session-history.csv",
+        mime="text/csv",
+        use_container_width=True,
     )
 
-    feat_mode = st.selectbox("Feature mode", ["hog", "raw_pixels"], index=0)
+    if feedback:
+        st.markdown("### Review queue")
+        st.dataframe(feedback, use_container_width=True, hide_index=True)
+        st.download_button(
+            "Download review queue JSON",
+            data=json.dumps(feedback, indent=2),
+            file_name="stress-review-queue.json",
+            mime="application/json",
+            use_container_width=True,
+        )
 
-    if st.button("🔄 Retrain & Promote", type="primary", use_container_width=True):
-        current_acc = None
-        if METADATA_PATH.exists():
-            current_acc = json.loads(METADATA_PATH.read_text(encoding="utf-8")).get(
-                "cross_validated_accuracy"
-            )
 
-        with st.spinner("Training… this may take a moment."):
-            result = train_model(feature_mode=feat_mode, promote=True)
+def methodology_page(bundle: dict) -> None:
+    metadata = bundle.get("metadata", {})
+    st.markdown("## Methodology")
+    st.markdown(
+        """
+        <div class="surface">
+            <div class="step"><div class="step-num">1</div><div><strong>Capture</strong><br><span class="mini">A handwriting sample enters through upload or camera capture.</span></div></div>
+            <div class="step"><div class="step-num">2</div><div><strong>Quality gate</strong><br><span class="mini">Resolution, sharpness and visible ink are checked before inference.</span></div></div>
+            <div class="step"><div class="step-num">3</div><div><strong>Preprocess</strong><br><span class="mini">The image is normalized to the representation expected by the packaged model.</span></div></div>
+            <div class="step"><div class="step-num">4</div><div><strong>Classify</strong><br><span class="mini">The trained Random Forest produces one of the stored stress-related labels.</span></div></div>
+            <div class="step"><div class="step-num">5</div><div><strong>Export</strong><br><span class="mini">Results and session history can be downloaded locally without server-side storage.</span></div></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-        load_model.clear()
-        st.success(f"Retraining complete — version `{result['version']}`")
+    rows = [
+        {"Property": "Model version", "Value": metadata.get("semantic_version") or metadata.get("version", "unknown")},
+        {"Property": "Feature mode", "Value": metadata.get("feature_extraction_method", "unknown")},
+        {"Property": "Image size", "Value": metadata.get("image_size", IMG_SIZE)},
+        {"Property": "Training set size", "Value": metadata.get("training_set_size", "not recorded")},
+        {"Property": "Cross-validated accuracy", "Value": metadata.get("cross_validated_accuracy", "not recorded")},
+        {"Property": "Evaluated accuracy", "Value": metadata.get("evaluated_accuracy", "not recorded")},
+    ]
+    st.markdown("### Packaged model metadata")
+    st.dataframe(rows, use_container_width=True, hide_index=True)
+    st.warning(
+        "The repository's dataset is very small. This product therefore presents predictions as experimental "
+        "classification outputs rather than validated measurements of psychological stress."
+    )
 
-        before = f"{current_acc:.2%}" if current_acc is not None else "N/A"
-        after = f"{result['evaluated_accuracy']:.2%}"
-        diff = result["evaluated_accuracy"] - (current_acc or 0.0)
 
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Before", before)
-        col2.metric("After", after)
-        col3.metric("Change", f"{diff:+.2%}")
-        st.info(f"Promoted to active: **{result['promoted']}**")
+def system_page(bundle: dict) -> None:
+    model = bundle.get("model")
+    metadata = bundle.get("metadata", {})
+    st.markdown("## System")
+    left, right = st.columns(2)
+    with left:
+        st.markdown("### Deployment contract")
+        st.code(
+            "streamlit run app.py --server.address 0.0.0.0 --server.port $PORT",
+            language="bash",
+        )
+        st.markdown(
+            "<div class='mini'>For Streamlit Community Cloud, select this repository, branch, and <code>app.py</code> entrypoint. The app reads its packaged model directly from the repository.</div>",
+            unsafe_allow_html=True,
+        )
+    with right:
+        st.markdown("### Runtime checks")
+        rows = [
+            {"Check": "Model file", "Status": "READY" if MODEL_PATH.exists() else "MISSING"},
+            {"Check": "Label mapping", "Status": "READY" if LABEL_MAP_PATH.exists() else "FALLBACK"},
+            {"Check": "Prediction interface", "Status": "READY" if hasattr(model, "predict") else "FAILED"},
+            {"Check": "Feature count", "Status": str(getattr(model, "n_features_in_", "unknown"))},
+            {"Check": "Metadata", "Status": "PRESENT" if metadata else "FALLBACK"},
+            {"Check": "Persistence", "Status": "SESSION ONLY"},
+            {"Check": "Authentication", "Status": "NOT USED"},
+            {"Check": "Database", "Status": "NOT USED"},
+        ]
+        st.dataframe(rows, use_container_width=True, hide_index=True)
+
+
+def main() -> None:
+    init_session()
+    inject_css()
+    try:
+        bundle = load_model()
+    except Exception as exc:
+        st.error("The packaged model could not be loaded safely.")
+        st.code(str(exc), language="text")
+        st.stop()
+
+    render_header(bundle)
+    page = render_sidebar(bundle)
+
+    if page == "Analyze":
+        analyze_page(bundle)
+    elif page == "Session history":
+        history_page()
+    elif page == "Methodology":
+        methodology_page(bundle)
+    else:
+        system_page(bundle)
+
+    st.markdown(
+        "<div class='footer'>Experimental software project. Outputs are not medical diagnoses or validated measures of psychological stress. Do not use them for high-impact decisions.</div>",
+        unsafe_allow_html=True,
+    )
+
+
+if __name__ == "__main__":
+    main()

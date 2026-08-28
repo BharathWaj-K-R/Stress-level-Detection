@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import io
+import json
 import warnings
 from pathlib import Path
 
@@ -20,8 +20,9 @@ DEFAULT_LABEL_MAP = {
     "medium": "Medium Stress",
     "high": "High Stress",
 }
-ALLOWED_EXTENSIONS = {".jpg", ".png"}
+ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024
+MAX_IMAGE_PIXELS = 20_000_000
 
 
 def normalize_label_map(label_map):
@@ -84,8 +85,11 @@ def validate_uploaded_file(uploaded_file, allowed_extensions=ALLOWED_EXTENSIONS,
 
     file_size = getattr(uploaded_file, "size", None)
     if file_size is None:
-        file_size = len(uploaded_file.getvalue())
+        payload = uploaded_file.getvalue() if hasattr(uploaded_file, "getvalue") else uploaded_file.read()
+        file_size = len(payload)
 
+    if file_size <= 0:
+        return False, "The uploaded file is empty."
     if file_size > max_size_bytes:
         return False, f"File is too large. Maximum allowed size is {max_size_bytes // (1024 * 1024)} MB."
 
@@ -95,16 +99,37 @@ def validate_uploaded_file(uploaded_file, allowed_extensions=ALLOWED_EXTENSIONS,
 def open_uploaded_image(uploaded_file):
     try:
         payload = uploaded_file.getvalue() if hasattr(uploaded_file, "getvalue") else uploaded_file.read()
-        return ImageOps.exif_transpose(Image.open(io.BytesIO(payload))).convert("L")
-    except (UnidentifiedImageError, OSError):
+        image = Image.open(io.BytesIO(payload))
+        image = ImageOps.exif_transpose(image)
+        width, height = image.size
+        if width <= 0 or height <= 0 or width * height > MAX_IMAGE_PIXELS:
+            return None
+        return image.convert("L")
+    except (UnidentifiedImageError, OSError, ValueError):
         return None
 
 
 def pil_to_normalized_array(image: Image.Image, image_size: int = 128) -> np.ndarray:
-    image = image.resize((image_size, image_size))
-    pixels = np.asarray(image, dtype=np.float32)
-    if pixels.max() > 1.0:
-        pixels = pixels / 255.0
+    if image_size <= 0:
+        raise ValueError("image_size must be positive")
+
+    grayscale = image.convert("L")
+    width, height = grayscale.size
+    if width <= 0 or height <= 0:
+        raise ValueError("Image has invalid dimensions")
+
+    # Preserve handwriting geometry by fitting into a square canvas instead of stretching.
+    scale = min(image_size / width, image_size / height)
+    resized = grayscale.resize(
+        (max(1, round(width * scale)), max(1, round(height * scale))),
+        Image.Resampling.LANCZOS,
+    )
+    canvas = Image.new("L", (image_size, image_size), color=255)
+    x = (image_size - resized.width) // 2
+    y = (image_size - resized.height) // 2
+    canvas.paste(resized, (x, y))
+
+    pixels = np.asarray(canvas, dtype=np.float32) / 255.0
     return np.clip(pixels, 0.0, 1.0)
 
 
@@ -136,7 +161,6 @@ def predict_with_bundle(bundle, image: Image.Image, image_size=128):
     raw_prediction = model.predict(features)[0]
     predicted_label = get_prediction_label(raw_prediction, label_map)
 
-    probabilities = None
     probability_map = None
     if hasattr(model, "predict_proba"):
         probabilities = model.predict_proba(features)[0]
