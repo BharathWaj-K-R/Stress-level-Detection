@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Stress Classification Lab">
+  <rect width="64" height="64" rx="15" fill="#111111"/>
+  <path d="M17 34c-4-2-5-7-2-10 1-2 3-3 6-3 0-5 4-8 9-7 3 0 5 2 6 4 4-2 9 0 10 4 2 4 0 8-3 10 1 5-2 9-7 10-3 1-6 0-8-2-3 3-8 3-11 0-2-2-2-4-1-6z" fill="none" stroke="#ffffff" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M20 31c3-1 5-3 6-6M29 41c1-4 3-7 7-9M38 25c-2 2-3 4-3 7M43 39c-3-1-5-3-7-5" fill="none" stroke="#b9b9b2" stroke-width="2" stroke-linecap="round"/>
+  <path d="M42 17l10-5-5 10-13 14" fill="none" stroke="#ffffff" stroke-width="2.9" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M34 37l-4 4" fill="none" stroke="#ffffff" stroke-width="2.9" stroke-linecap="round"/>
+  <path d="M39 34l13-7" fill="none" stroke="#8f8f89" stroke-width="2" stroke-linecap="round"/>
+</svg>

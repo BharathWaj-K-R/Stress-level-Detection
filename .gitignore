@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+Thumbs.db
+
+# Local Python environments
+.venv/
+venv/
+
+# Streamlit local secrets
+.streamlit/secrets.toml
+
+# OS/editor noise
+.vscode/
+.idea/
